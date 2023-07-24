@@ -84,7 +84,8 @@ def evaluation_wrapper(model, data_loader, tokenizer, device, config, prefix="")
         if i2t is not None:
             txt2img_ids = data_loader.dataset.txt2img
             img2txt_ids = data_loader.dataset.img2txt
-            res[name] = itm_eval(i2t, t2i, txt2img_ids, img2txt_ids)
+            txt_list = data_loader.dataset.text
+            res[name] = itm_eval(i2t, t2i, txt2img_ids, img2txt_ids, txt_list)
     return res
 
 
@@ -124,6 +125,13 @@ def evaluation(model, data_loader, tokenizer, device, config):
         model.vision_proj(_pooled_image_feats), model.text_proj(text_feats[:, 0])
     )
     logger.info("Computing ITC scores [dot-product], done!")
+    if hasattr(config.evaluation, "rerank") and not config.evaluation.rerank:
+        return (
+            i2t_scores.cpu().numpy(),
+            t2i_scores.cpu().numpy(),
+            i2t_scores.cpu().numpy(),
+            t2i_scores.cpu().numpy()
+        )
 
     num_images = len(data_loader.dataset.image)
     i2t_scores_x = torch.full((num_images, len(texts)), -100.0).to(
@@ -312,6 +320,7 @@ def evaluation(model, data_loader, tokenizer, device, config):
             bs = 32
             # bs = config.batch_size_test.video
             itm_embeds = []
+            topk_idx = topk_idx.cpu()
             for j in range(0, len(topk_idx), bs):
 
                 if config.deep_fusion:
@@ -395,9 +404,20 @@ def evaluation(model, data_loader, tokenizer, device, config):
         i2t_scores.T.cpu().numpy(),
     )
 
+# metric fns
+def recall_fn(rank, k=5):
+    cnt = len([r for r in rank if r <= k])
+    return cnt / len(rank)
+def ap_fn(rank):
+    ap = 0
+    for i, r in enumerate(rank):
+        ap += (i+1) / r
+    ap = ap / len(rank)
+    return ap
+
 
 @torch.no_grad()
-def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt):
+def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
     # Images->Text
     ranks = np.zeros(scores_i2t.shape[0])
     for index, score in enumerate(scores_i2t):
@@ -420,7 +440,12 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt):
     tr10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
 
     # Text->Images
-    ranks = np.zeros(scores_t2i.shape[0])
+    LEGACY = False
+    import pudb;pudb.set_trace()
+    if LEGACY:
+        ranks = np.zeros(scores_t2i.shape[0])
+    else:
+        ranks = {}
 
     for index, score in enumerate(scores_t2i):
         inds = np.argsort(score)[::-1]
@@ -429,32 +454,63 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt):
             ranks[index] = np.where(inds == gt_img_ids)[0][0]
         else:  # list, used in the case each caption has multiple GT images
             # Score
-            rank = 1e20
-            for i in gt_img_ids:
-                tmp = np.where(inds == i)[0][0]
-                if tmp < rank:
-                    rank = tmp
-            ranks[index] = rank
+            if LEGACY:
+                rank = 1e20
+                for i in gt_img_ids:
+                    tmp = np.where(inds == i)[0][0]
+                    if tmp < rank:
+                        rank = tmp
+                ranks[index] = rank
+            else:
+                raw_txt = txt_list[index]
+                _rank = []
+                for i in gt_img_ids:
+                    tmp = np.where(inds == i)[0][0]
+                    _rank.append(tmp)
+                ranks[f"{raw_txt}_r@5"] = 100.0 * recall_fn(_rank, k=5)
+                ranks[f"{raw_txt}_r@10"] = 100.0 * recall_fn(_rank, k=10)
+                ranks[f"{raw_txt}_r@50"] = 100.0 * recall_fn(_rank, k=50)
+                ranks[f"{raw_txt}_ap"] = 100.0 * ap_fn(_rank)
+
 
     # Compute metrics
-    ir1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
-    ir5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
-    ir10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+    if LEGACY:
+        ir1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+        ir5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+        ir10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+        ir50 = 100.0 * len(np.where(ranks < 50)[0]) / len(ranks)
+        tr_mean = (tr1 + tr5 + tr10) / 3
+        ir_mean = (ir1 + ir5 + ir10) / 3
+        r_mean = (tr_mean + ir_mean) / 2
 
-    tr_mean = (tr1 + tr5 + tr10) / 3
-    ir_mean = (ir1 + ir5 + ir10) / 3
-    r_mean = (tr_mean + ir_mean) / 2
+        eval_result = {
+            "txt_r1": tr1,
+            "txt_r5": tr5,
+            "txt_r10": tr10,
+            "txt_r_mean": tr_mean,
+            "img_r1": ir1,
+            "img_r5": ir5,
+            "img_r10": ir10,
+            "img_r_mean": ir_mean,
+            "r_mean": r_mean,
+        }
+    else:
+        r5 = [ranks[k] for k in ranks if "_r@5" in k]
+        r10 = [ranks[k] for k in ranks if "_r@5" in k]
+        r50 = [ranks[k] for k in ranks if "_r@5" in k]
+        ap = [ranks[k] for k in ranks if "_ap" in k]
+        eval_result = {
+            "txt_r1": tr1,
+            "txt_r5": tr5,
+            "txt_r10": tr10,
+            "txt_r_mean": tr_mean,
+            "img_r5": sum(r5) / len(r5),
+            "img_r10": sum(r10) / len(r10),
+            "img_r50": sum(r50) / len(r50),
+            "img_map": sum(ap) / len(ap),
+        }
+        eval_result.update(ranks)
 
-    eval_result = {
-        "txt_r1": tr1,
-        "txt_r5": tr5,
-        "txt_r10": tr10,
-        "txt_r_mean": tr_mean,
-        "img_r1": ir1,
-        "img_r5": ir5,
-        "img_r10": ir10,
-        "img_r_mean": ir_mean,
-        "r_mean": r_mean,
-    }
+    
     eval_result = {k: round(v, 2) for k, v in eval_result.items()}
     return eval_result

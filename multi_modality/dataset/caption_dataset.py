@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 class ImgTxtRetTrainDataset(ImageVideoBaseDataset):
     media_type = "image"
 
-    def __init__(self, ann_file, transform, has_multi_vision_gt=False):
+    def __init__(self, ann_file, transform, has_multi_vision_gt=False, text_cls=False):
         super(ImgTxtRetTrainDataset, self).__init__()
         self.anno_list = load_anno(ann_file)
         self.transform = transform
         # each caption has multiple image as ground_truth, e.g., ssv2
         self.has_multi_vision_gt = has_multi_vision_gt
+        self.text_cls = text_cls
         self.match_ids = {}
 
         n = 0
@@ -27,6 +28,16 @@ class ImgTxtRetTrainDataset(ImageVideoBaseDataset):
             if key not in self.match_ids:
                 self.match_ids[key] = n
                 n += 1
+
+        if text_cls:
+            labels = set()
+            for ann in self.anno_list:
+                _captions = ann["caption"] \
+                if isinstance(ann["caption"], list) else [ann["caption"], ]
+                for caption in _captions:
+                    labels.add(caption)
+            self.text = list(labels)
+            self.text.sort()
 
     def __len__(self):
         return len(self.anno_list)
@@ -50,9 +61,9 @@ class VidTxtRetTrainDataset(ImgTxtRetTrainDataset):
             self, ann_file, transform, num_frames=4,
             video_reader_type="decord", sample_type="rand", num_tries=3,
             is_paragraph_retrieval=False, has_multi_vision_gt=False,
-            trimmed30=False
+            trimmed30=False, text_cls=False
     ):
-        super(VidTxtRetTrainDataset, self).__init__(ann_file, transform, has_multi_vision_gt)
+        super(VidTxtRetTrainDataset, self).__init__(ann_file, transform, has_multi_vision_gt, text_cls)
         self.num_frames = num_frames
         self.video_reader_type = video_reader_type
         self.video_reader = VIDEO_READER_FUNCS[video_reader_type]
@@ -70,11 +81,12 @@ class VidTxtRetTrainDataset(ImgTxtRetTrainDataset):
 class ImgTxtRetEvalDataset(ImageVideoBaseDataset):
     media_type = "image"
 
-    def __init__(self, ann_file, transform, has_multi_vision_gt=False):
+    def __init__(self, ann_file, transform, has_multi_vision_gt=False, text_cls=False):
         super(ImgTxtRetEvalDataset, self).__init__()
         self.raw_anno_list = load_anno(ann_file)
         self.transform = transform
         self.has_multi_vision_gt = has_multi_vision_gt  # each caption has multiple image as ground_truth
+        self.text_cls = text_cls # Treat text as cls
 
         self.text = None
         self.image = None
@@ -87,10 +99,13 @@ class ImgTxtRetEvalDataset(ImageVideoBaseDataset):
         self.image = []
         self.txt2img = {}
         self.img2txt = {}
-        if self.has_multi_vision_gt:
-            self.build_data_multi_img_gt()
+        if self.text_cls:
+            self.build_data_cls_gt()
         else:
-            self.build_data_multi_txt_gt()
+            if self.has_multi_vision_gt:
+                self.build_data_multi_img_gt()
+            else:
+                self.build_data_multi_txt_gt()
         self.anno_list = [dict(image=e) for e in self.image]
 
     def build_data_multi_img_gt(self):
@@ -121,6 +136,30 @@ class ImgTxtRetEvalDataset(ImageVideoBaseDataset):
                 self.txt2img[txt_id] = img_id
                 txt_id += 1
 
+    def build_data_cls_gt(self):
+        """texts are very few so overlapped also negative exists"""
+        # Get all text
+        labels = set()
+        for ann in self.raw_anno_list:
+            _captions = ann["caption"] \
+                if isinstance(ann["caption"], list) else [ann["caption"], ]
+            for caption in _captions:
+                if caption != "":
+                    labels.add(caption)
+        self.text = list(labels)
+        self.text.sort()
+        # Build img2txt and txt2img
+        for img_id, ann in enumerate(self.raw_anno_list):
+            self.image.append(ann["image"])
+            self.txt2img[txt_id] = []
+            _captions = ann["caption"] \
+                if isinstance(ann["caption"], list) else [ann["caption"], ]
+            for caption in _captions:
+                if caption != "":
+                    txt_id = self.text.index(caption)
+                    self.img2txt = txt_id
+                    self.txt2img[txt_id].append(img_id)
+
     def __len__(self):
         return len(self.anno_list)
 
@@ -137,9 +176,9 @@ class VidTxtRetEvalDataset(ImgTxtRetEvalDataset):
             self, ann_file, transform, num_frames=4,
             video_reader_type="decord", sample_type="rand", num_tries=1,
             is_paragraph_retrieval=False, has_multi_vision_gt=False,
-            trimmed30=False
+            trimmed30=False, text_cls=False
     ):
-        super(VidTxtRetEvalDataset, self).__init__(ann_file, transform, has_multi_vision_gt)
+        super(VidTxtRetEvalDataset, self).__init__(ann_file, transform, has_multi_vision_gt, text_cls)
         self.num_frames = num_frames
         self.video_reader_type = video_reader_type
         self.video_reader = VIDEO_READER_FUNCS[video_reader_type]

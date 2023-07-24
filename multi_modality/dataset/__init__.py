@@ -84,18 +84,18 @@ def create_dataset(dataset_type, config):
         num_tries=1,  # we want to have predictions for all videos
     )
 
-    if dataset_type in ["ret_train", "ret_eval"]:  # for didemo and activitynet captions
+    if dataset_type in ["ret_train", "retcls_train", "ret_eval", "retcls_eval"]:  # for didemo and activitynet captions
         is_paragraph_retrieval = config.get("is_paragraph_retrieval", False)
         video_only_dataset_kwargs_eval["is_paragraph_retrieval"] = is_paragraph_retrieval
         video_only_dataset_kwargs_train["is_paragraph_retrieval"] = is_paragraph_retrieval
 
-    if dataset_type in ["pt_train", "ret_train"]:
+    if dataset_type in ["pt_train", "ret_train", "retcls_train"]:
         # convert to list of lists
         train_files = (
             [config.train_file] if isinstance(config.train_file[0], str) else config.train_file
         )
         train_media_types = sorted(list({get_media_type(e) for e in train_files}))
-        if dataset_type == "ret_train":
+        if dataset_type in ["ret_train", "retcls_train"]:
             assert (
                 len(train_media_types) == 1
             ), f"retrieval downstream should only have one media type, got {train_media_types}"
@@ -127,7 +127,7 @@ def create_dataset(dataset_type, config):
                     datasets.append(dataset_cls(**dataset_kwargs))
                 dataset = ConcatDataset(datasets)
                 train_datasets.append(dataset)
-            else:
+            elif dataset_type == "ret_train":
                 dataset_kwargs = dict(
                     ann_file=_train_files,
                     transform=train_transform,
@@ -142,9 +142,25 @@ def create_dataset(dataset_type, config):
                     dataset_kwargs.update(video_only_dataset_kwargs_train)
                 dataset = dataset_cls(**dataset_kwargs)
                 train_datasets.append(dataset)
+            elif dataset_type == "retcls_train":
+                dataset_kwargs = dict(
+                    ann_file=_train_files,
+                    transform=train_transform,
+                    has_multi_vision_gt=config.get(
+                        "has_multi_vision_gt", False
+                    ),  # true for ssv2 ret
+                    trimmed30=config.get(
+                        "trimmed30", False
+                    ), # use the first 30s for didemo
+                    text_cls = True
+                )
+                if m == "video":
+                    dataset_kwargs.update(video_only_dataset_kwargs_train)
+                dataset = dataset_cls(**dataset_kwargs)
+                train_datasets.append(dataset)
         return train_datasets
 
-    elif dataset_type in ["pt_eval", "ret_eval"]:
+    elif dataset_type in ["pt_eval", "ret_eval", "retcls_eval"]:
         test_datasets = []
         test_dataset_names = []
         # multiple test datasets, all separate
@@ -163,6 +179,7 @@ def create_dataset(dataset_type, config):
                 trimmed30=config.get(
                     "trimmed30", False
                 ), # use the first 30s for didemo
+                text_cls = dataset_type == "retcls_eval"
             )
             if media_type == "video":
                 dataset_kwargs.update(video_only_dataset_kwargs_eval)

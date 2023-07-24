@@ -1,7 +1,7 @@
 import os as __os  # add "__" if not want to be exported
 from copy import deepcopy as __deepcopy
 
-data_dir = 'your_data_path/anno'
+data_dir = '/shared/data/anno'
 if data_dir is None:
     raise ValueError("please set environment `VL_DATA_DIR` before continue")
 

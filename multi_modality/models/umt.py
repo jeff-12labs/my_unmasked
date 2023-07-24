@@ -68,6 +68,13 @@ class UMT(nn.Module):
         vision_proj = self.vision_proj(pooled_vision_embeds)
         text_proj = self.text_proj(pooled_text_embeds)
 
+        if self.loss_weight.cls != 0:
+            loss_cls = self.criterion_vtc_vtm.cls_loss(
+                vision_proj, text_proj, idx, self.temp, all_gather=False ### DEBUG
+            )
+        else:
+            loss_cls = torch.tensor(0)
+
         # calculate loss
         ## MCA loss
         if self.loss_weight.uta != 0:
@@ -108,6 +115,7 @@ class UMT(nn.Module):
             loss_mlm = torch.tensor(0)
 
         return dict(
+            loss_cls=loss_cls * self.loss_weight.cls,
             loss_uta=loss_uta * self.loss_weight.uta,
             loss_vtc=loss_vtc * self.loss_weight.vtc,
             loss_vtm=loss_vtm * self.loss_weight.vtm,
@@ -131,7 +139,7 @@ class UMT(nn.Module):
         mask_ratio = self.image_mask_ratio if T == 1 else self.video_mask_ratio
         
         if self.clip_teacher is None or self.loss_weight.uta == 0:
-            return None, None, None
+            return None, None
 
         if H != self.clip_img_size:
             image = torch.nn.functional.interpolate(

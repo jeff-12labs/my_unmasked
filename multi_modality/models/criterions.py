@@ -40,6 +40,7 @@ class VTC_VTM_Loss(nn.Module):
     def __init__(self, vtm_hard_neg):
         super().__init__()
         self.vtm_hard_neg = vtm_hard_neg
+        self.ce_loss = nn.CrossEntropyLoss()
 
     def vtc_loss(
         self,
@@ -79,6 +80,38 @@ class VTC_VTM_Loss(nn.Module):
 
         loss_vtc = (loss_i2t + loss_t2i) / 2
         return loss_vtc
+
+    def cls_loss(
+        self,
+        vision_proj: torch.Tensor,
+        text_proj: torch.Tensor,
+        logits: torch.Tensor,
+        temp=1.0,
+        all_gather=True,
+    ):
+        """forward to calculate the loss
+
+        Args:
+            vision_proj (torch.Tensor): The vision representation. Shape: [B,T,C].
+            text_proj (torch.Tensor): The text representation. Shape: [B,C].
+            idx (torch.Tensor): The index for each example. Shape: [B,].
+            temp (torch.Tensor): The temperature. Shape: [].
+            all_gather (bool): If true, will gather samples across all the GPUs and calculate loss across the gathered samples.
+
+        Returns: loss_vtc (torch.Tensor): The video-text contrastive loss. Shape: [].
+
+        """
+        if all_gather:
+            gather_args = self.get_gather_args()
+            vision_proj = allgather_wgrad(vision_proj, gather_args)
+            text_proj = allgather_wgrad(text_proj, gather_args)
+            if logits is not None:
+                logits = allgather_wgrad(logits, gather_args)
+
+        sim_v2t, _ = get_sim(vision_proj, text_proj, temp)
+
+        loss_cls = self.ce_loss(sim_v2t, logits)
+        return loss_cls
 
     def vtm_loss(
         self,
