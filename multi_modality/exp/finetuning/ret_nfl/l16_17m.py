@@ -5,7 +5,7 @@ from configs.model import *
 del available_corpus
 
 train_file = [
-    f"{anno_root_downstream}/nfl_ret_train.json",
+    f"{anno_root_downstream}/nfl_ret_sync_train.json",
     "/shared/data/NFL/clips_comp",
     "video",
 ]
@@ -87,10 +87,10 @@ model = dict(
 
 criterion = dict(
     loss_weight=dict(
-        cls=1.0,
-        vtc=0.0, #1.0, 
+        cls=0.0,
+        vtc=1.0, #1.0, 
         mlm=0.0, 
-        vtm=0.0, #1.0, 
+        vtm=1.0, #1.0, 
         uta=0.0,
     ),  # 0: disabled.
     vtm_hard_neg=True,
@@ -109,7 +109,7 @@ optimizer = dict(
     different_lr=dict(enable=False, module_names=[], lr=1e-3),
 )
 
-scheduler = dict(sched="cosine", epochs=7, min_lr_multi=0.01, warmup_epochs=1)
+scheduler = dict(sched="cosine", epochs=60, min_lr_multi=0.01, warmup_epochs=1)
 
 evaluate = False
 deep_fusion = False
@@ -118,7 +118,8 @@ evaluation = dict(
     eval_x_only=False,
     k_test=128,
     eval_offload=True,  # offload gpu tensors to cpu to save memory.
-    rerank=False
+    rerank=True,
+    eval_step=5,
 )
 
 fp16 = True
@@ -138,7 +139,7 @@ mode = "pt"
 output_dir = None  # output dir
 resume = False  # if True, load optimizer and scheduler states as well
 debug = False
-log_freq = 100
+log_freq = 10
 seed = 42
 
 save_latest = True

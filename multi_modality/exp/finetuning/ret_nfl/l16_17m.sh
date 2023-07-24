@@ -7,13 +7,13 @@ export PYTHONPATH=${PYTHONPATH}:${which_python}
 export PYTHONPATH=${PYTHONPATH}:.
 echo "PYTHONPATH: ${PYTHONPATH}"
 
-JOB_NAME='nfl_cls'
+JOB_NAME='nflsync_vtc_vtm'
 OUTPUT_DIR="$(dirname $0)/$JOB_NAME"
 LOG_DIR="$(dirname $0)/logs/${JOB_NAME}"
 PARTITION='video'
 NNODE=1
-NUM_GPUS=1
-NUM_CPU=30
+NUM_GPUS=2
+NUM_CPU=15
 
 # srun -p ${PARTITION} \
 #     --job-name=${JOB_NAME} \
@@ -21,10 +21,10 @@ NUM_CPU=30
 #     --gres=gpu:${NUM_GPUS} \
 #     --ntasks-per-node=1 \
 #     --cpus-per-task=${NUM_CPU} \
-# torchrun \
-#     --nnodes=${NNODE} \
-#     --nproc_per_node=${NUM_GPUS} \
-#     --rdzv_backend=c10d \
-python    tasks/retrieval_cls.py \
+torchrun \
+    --nnodes=${NNODE} \
+    --nproc_per_node=${NUM_GPUS} \
+    --rdzv_backend=c10d \
+    tasks/retrieval_cls.py \
     $(dirname $0)/l16_17m.py \
     output_dir ${OUTPUT_DIR}

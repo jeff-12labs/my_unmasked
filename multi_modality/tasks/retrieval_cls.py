@@ -63,11 +63,13 @@ def train(
     for i, (media_type, (image, text, idx)) in enumerate(iterator):
         image = image.to(device, non_blocking=True)
         idx = idx.to(device, non_blocking=True)
-        labels = torch.zeros(len(idx), dtype=torch.long, device=device)
-        for bi, val in enumerate(text):
-            labels[bi] = all_text.index(val)
+        if config.criterion.loss_weight.get('cls', 0) != 0:
+            text = all_text
+            labels = torch.zeros(len(idx), dtype=torch.long, device=device)
+            for bi, val in enumerate(text):
+                labels[bi] = all_text.index(val)
         text_input = tokenizer(
-            all_text,
+            text,
             padding="max_length",
             truncation=True,
             max_length=config.max_txt_l,
@@ -75,7 +77,10 @@ def train(
         ).to(device)
 
         with torch.cuda.amp.autocast(enabled=config.fp16):
-            loss_dict = model(image, text_input, labels)
+            if config.criterion.loss_weight.get('cls', 0) != 0:
+                loss_dict = model(image, text_input, labels)
+            else:
+                loss_dict = model(image, text_input, idx)
             loss = sum(loss_dict.values())
 
         optimizer.zero_grad()
@@ -167,6 +172,7 @@ def main(config):
                 config,
             )
 
+        eval_step = config.evaluation.get('eval_step', 1)
         if config.get('no_test', False) and not config.evaluate:
             save_obj = {
                 "model": model_without_ddp.state_dict(),
@@ -179,8 +185,7 @@ def main(config):
             }
             torch.save(save_obj, join(config.output_dir, "ckpt_best.pth"))
             best_epoch = epoch
-
-        else:
+        elif config.evaluate or epoch % eval_step == eval_step - 1:
             with torch.cuda.amp.autocast(enabled=config.fp16):
                 eval_res = {}
                 for test_name, test_loader in test_name2loaders.items():
@@ -222,19 +227,20 @@ def main(config):
                         "epoch": epoch,
                         "global_step": global_step,
                     }
-                    eval_file = "eval_res_best.json"
-                    eval_res.to_json(join(config.output_dir, eval_file))
+                    # eval_file = "eval_res_best.json"
+                    # eval_res.to_json(join(config.output_dir, eval_file))
                     torch.save(save_obj, join(config.output_dir, "ckpt_best.pth"))
                     best = cur_r_mean
                     best_epoch = epoch
-                if config.evaluate:
-                    eval_file = "eval_res.json"
-                    eval_res.to_json(join(config.output_dir, eval_file))
+                # if config.evaluate:
+                eval_file = f"eval_res_{epoch+1}.json"
+                eval_res.to_json(join(config.output_dir, eval_file))
 
         if config.evaluate or config.debug:
             break
 
-        dist.barrier()
+        if config.distributed:
+            dist.barrier()
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))

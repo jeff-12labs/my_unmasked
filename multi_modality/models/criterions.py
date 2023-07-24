@@ -73,7 +73,7 @@ class VTC_VTM_Loss(nn.Module):
 
         with torch.no_grad():
             sim_v2t_targets = self.get_mask(sim_v2t, idx=idx, normalize=True)
-            sim_t2v_targets = sim_v2t_targets
+            sim_t2v_targets = sim_v2t_targets.T
 
         loss_i2t = -torch.sum(F.log_softmax(sim_v2t, dim=1) * sim_v2t_targets, dim=1).mean()
         loss_t2i = -torch.sum(F.log_softmax(sim_t2v, dim=1) * sim_t2v_targets, dim=1).mean()
@@ -151,7 +151,7 @@ class VTC_VTM_Loss(nn.Module):
 
             mask = self.get_mask(sim_v2t, idx=idx).bool()
             weights_v2t.masked_fill_(mask, 0)
-            weights_t2v.masked_fill_(mask, 0)
+            weights_t2v.masked_fill_(mask.T, 0)
             weights_v2t = torch.nan_to_num_(weights_v2t, nan=1e-2, posinf=1e-2, neginf=1e-2)
             weights_t2v = torch.nan_to_num_(weights_t2v, nan=1e-2, posinf=1e-2, neginf=1e-2)
 
@@ -161,17 +161,28 @@ class VTC_VTM_Loss(nn.Module):
             txt_neg_indices = torch.multinomial(weights_v2t, 1).squeeze()
         else:
             vision_neg_indices = self.get_rand_indices(mask, 1).squeeze()
-            txt_neg_indices = self.get_rand_indices(mask, 1).squeeze()
+            txt_neg_indices = self.get_rand_indices(mask.T, 1).squeeze()
 
         vision_embeds_neg = vision_embeds[vision_neg_indices]  # [B, T*L, c]
         text_embeds_neg = text_embeds[txt_neg_indices]  # [B, L, d]
         text_atts_neg = text_atts[txt_neg_indices]
+        
+        if text_embeds.size(0) != vision_embeds.size(0):
+            text_embeds_pos = text_embeds[idx] # Bv x L x d
+            text_atts_pos = text_atts[idx] 
+            vision_atts_neg = torch.ones(
+                [text_embeds.size(0), vision_embeds.size(1)], dtype=torch.long, device=vision_embeds.device
+            )
+        else:
+            text_embeds_pos = text_embeds
+            text_atts_pos = text_atts
+            vision_atts_neg = vision_atts
 
         # concat embeddings
         vision_embeds_all = torch.cat([vision_embeds, vision_embeds_neg, vision_embeds], dim=0)
-        text_embeds_all = torch.cat([text_embeds, text_embeds, text_embeds_neg], dim=0)
-        vision_atts_all = torch.cat([vision_atts, vision_atts, vision_atts], dim=0)
-        text_atts_all = torch.cat([text_atts, text_atts, text_atts_neg], dim=0)
+        text_embeds_all = torch.cat([text_embeds_pos, text_embeds, text_embeds_neg], dim=0)
+        vision_atts_all = torch.cat([vision_atts, vision_atts_neg, vision_atts], dim=0)
+        text_atts_all = torch.cat([text_atts_pos, text_atts, text_atts_neg], dim=0)
 
         output = multimodal_encoder(
             encoder_embeds=text_embeds_all,
@@ -186,8 +197,8 @@ class VTC_VTM_Loss(nn.Module):
 
         vtm_logits = vtm_head(vtm_embeds)  # [3*B, 2]
 
-        bs = vtm_logits.shape[0] // 3
-        vtm_labels = vtm_logits.new_ones(3 * bs, dtype=torch.long)
+        bs = vision_embeds.size(0)
+        vtm_labels = vtm_logits.new_ones(vtm_logits.size(0), dtype=torch.long)
         vtm_labels[bs:] = 0
         loss_vtm = F.cross_entropy(vtm_logits, vtm_labels)
         return loss_vtm
@@ -217,8 +228,13 @@ class VTC_VTM_Loss(nn.Module):
             normalize (bool): If true, make row sum equal to 1
         """
         if idx is not None:
-            idx = idx.view(-1, 1)
-            mask = torch.eq(idx, idx.T).to(sim.dtype)
+            if sim.size(0) != sim.size(1):
+                mask = torch.zeros_like(sim)
+                for i, v in enumerate(idx):
+                    mask[i][v] = 1
+            else:
+                idx = idx.view(-1, 1)
+                mask = torch.eq(idx, idx.T).to(sim.dtype)
             if normalize:
                 mask = mask / mask.sum(1, keepdim=True)
         else:

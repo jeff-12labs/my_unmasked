@@ -70,7 +70,7 @@ class UMT(nn.Module):
 
         if self.loss_weight.cls != 0:
             loss_cls = self.criterion_vtc_vtm.cls_loss(
-                vision_proj, text_proj, idx, self.temp, all_gather=False ### DEBUG
+                vision_proj, text_proj, idx, self.temp, all_gather=self.config.distributed
             )
         else:
             loss_cls = torch.tensor(0)
@@ -85,7 +85,7 @@ class UMT(nn.Module):
         ## VTC loss
         if self.loss_weight.vtc != 0:
             loss_vtc = self.criterion_vtc_vtm.vtc_loss(
-                vision_proj, text_proj, idx, self.temp, all_gather=True
+                vision_proj, text_proj, idx, self.temp, all_gather=self.config.distributed
             )
         else:
             loss_vtc = torch.tensor(0)

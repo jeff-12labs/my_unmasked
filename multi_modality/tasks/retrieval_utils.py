@@ -423,25 +423,26 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
     for index, score in enumerate(scores_i2t):
         inds = np.argsort(score)[::-1]
         # Score
-        gt_txt_ids = img2txt[index]
-        if isinstance(gt_txt_ids, int):
-            ranks[index] = np.where(inds == gt_txt_ids)[0][0]
-        else:
-            rank = 1e20
-            for i in gt_txt_ids:
-                tmp = np.where(inds == i)[0][0]
-                if tmp < rank:
-                    rank = tmp
-            ranks[index] = rank
+        if index in img2txt: # Check if image is negative
+            gt_txt_ids = img2txt[index]
+            if isinstance(gt_txt_ids, int):
+                ranks[index] = np.where(inds == gt_txt_ids)[0][0]
+            else:
+                rank = 1e20
+                for i in gt_txt_ids:
+                    tmp = np.where(inds == i)[0][0]
+                    if tmp < rank:
+                        rank = tmp
+                ranks[index] = rank
 
     # Compute metrics
     tr1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
     tr5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
     tr10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+    tr_mean = (tr1 + tr5 + tr10) / 3
 
     # Text->Images
     LEGACY = False
-    import pudb;pudb.set_trace()
     if LEGACY:
         ranks = np.zeros(scores_t2i.shape[0])
     else:
@@ -466,11 +467,12 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
                 _rank = []
                 for i in gt_img_ids:
                     tmp = np.where(inds == i)[0][0]
-                    _rank.append(tmp)
-                ranks[f"{raw_txt}_r@5"] = 100.0 * recall_fn(_rank, k=5)
-                ranks[f"{raw_txt}_r@10"] = 100.0 * recall_fn(_rank, k=10)
-                ranks[f"{raw_txt}_r@50"] = 100.0 * recall_fn(_rank, k=50)
-                ranks[f"{raw_txt}_ap"] = 100.0 * ap_fn(_rank)
+                    _rank.append(tmp + 1)
+                _rank.sort()
+                ranks[f"{raw_txt}_r@5"] = recall_fn(_rank, k=5)
+                ranks[f"{raw_txt}_r@10"] = recall_fn(_rank, k=10)
+                ranks[f"{raw_txt}_r@50"] = recall_fn(_rank, k=50)
+                ranks[f"{raw_txt}_ap"] = ap_fn(_rank)
 
 
     # Compute metrics
@@ -479,7 +481,6 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
         ir5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
         ir10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
         ir50 = 100.0 * len(np.where(ranks < 50)[0]) / len(ranks)
-        tr_mean = (tr1 + tr5 + tr10) / 3
         ir_mean = (ir1 + ir5 + ir10) / 3
         r_mean = (tr_mean + ir_mean) / 2
 
@@ -495,10 +496,10 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
             "r_mean": r_mean,
         }
     else:
-        r5 = [ranks[k] for k in ranks if "_r@5" in k]
-        r10 = [ranks[k] for k in ranks if "_r@5" in k]
-        r50 = [ranks[k] for k in ranks if "_r@5" in k]
-        ap = [ranks[k] for k in ranks if "_ap" in k]
+        r5 = [ranks[k] for k in ranks if k[-4:] == "_r@5"]
+        r10 = [ranks[k] for k in ranks if k[-5:] == "_r@10"]
+        r50 = [ranks[k] for k in ranks if k[-5:] == "_r@50"]
+        ap = [ranks[k] for k in ranks if k[-3:] == "_ap"]
         eval_result = {
             "txt_r1": tr1,
             "txt_r5": tr5,
@@ -507,10 +508,11 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
             "img_r5": sum(r5) / len(r5),
             "img_r10": sum(r10) / len(r10),
             "img_r50": sum(r50) / len(r50),
-            "img_map": sum(ap) / len(ap),
+            "img_ap": sum(ap) / len(ap),
         }
+        eval_result["r_mean"] = (tr_mean + eval_result["img_ap"]) / 2
         eval_result.update(ranks)
 
     
-    eval_result = {k: round(v, 2) for k, v in eval_result.items()}
+    eval_result = {k: round(v, 3) for k, v in eval_result.items()}
     return eval_result

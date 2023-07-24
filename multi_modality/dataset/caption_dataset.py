@@ -151,13 +151,14 @@ class ImgTxtRetEvalDataset(ImageVideoBaseDataset):
         # Build img2txt and txt2img
         for img_id, ann in enumerate(self.raw_anno_list):
             self.image.append(ann["image"])
-            self.txt2img[txt_id] = []
             _captions = ann["caption"] \
                 if isinstance(ann["caption"], list) else [ann["caption"], ]
             for caption in _captions:
                 if caption != "":
                     txt_id = self.text.index(caption)
-                    self.img2txt = txt_id
+                    self.img2txt[img_id] = txt_id
+                    if txt_id not in self.txt2img:
+                        self.txt2img[txt_id] = []
                     self.txt2img[txt_id].append(img_id)
 
     def __len__(self):
