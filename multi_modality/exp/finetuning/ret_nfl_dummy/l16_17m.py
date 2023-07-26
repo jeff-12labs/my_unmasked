@@ -5,7 +5,7 @@ from configs.model import *
 del available_corpus
 
 train_file = [
-    f"{anno_root_downstream}/nfl_ret_sync_train.json",
+    f"{anno_root_downstream}/nfl_ret_dummy_train.json",
     "/shared/data/NFL/clips_comp",
     "video",
 ]
@@ -80,7 +80,7 @@ model = dict(
         keep_temporal=True,
     ),
     text_encoder="${TextEncoders[${text_enc}]}",
-    multimodal=dict(enable=False), ### Set false when not using VTM
+    multimodal=dict(enable=True),
     embed_dim=768,
     temp=0.07,
 )
@@ -90,7 +90,7 @@ criterion = dict(
         cls=0.0,
         vtc=1.0, #1.0, 
         mlm=0.0, 
-        vtm=0.0, #1.0,
+        vtm=1.0, #1.0, 
         uta=0.0,
     ),  # 0: disabled.
     vtm_hard_neg=True,
@@ -118,7 +118,7 @@ evaluation = dict(
     eval_x_only=False,
     k_test=128,
     eval_offload=True,  # offload gpu tensors to cpu to save memory.
-    rerank=False, ### Set false when not using VTM
+    rerank=True,
     eval_step=5,
 )
 

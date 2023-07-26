@@ -37,7 +37,8 @@ class UMT(nn.Module):
         self.text_proj = nn.Linear(self.text_width, self.embed_dim)
 
         self.temp = nn.parameter.Parameter(torch.ones([]) * config.model.temp)
-        self.itm_head = nn.Linear(self.text_width, 2)
+        if config.criterion.loss_weight.vtm != 0:
+            self.itm_head = nn.Linear(self.text_width, 2)
 
         # criterions
         self.loss_weight = config.criterion.loss_weight

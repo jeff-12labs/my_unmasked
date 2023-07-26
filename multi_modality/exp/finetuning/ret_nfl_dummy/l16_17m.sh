@@ -7,12 +7,12 @@ export PYTHONPATH=${PYTHONPATH}:${which_python}
 export PYTHONPATH=${PYTHONPATH}:.
 echo "PYTHONPATH: ${PYTHONPATH}"
 
-JOB_NAME='nflsync_vtc_b24'
+JOB_NAME='nfldummy_vtcvtm_b24'
 OUTPUT_DIR="$(dirname $0)/$JOB_NAME"
 LOG_DIR="$(dirname $0)/logs/${JOB_NAME}"
 PARTITION='video'
 NNODE=1
-NUM_GPUS=2
+NUM_GPUS=4
 NUM_CPU=15
 
 # srun -p ${PARTITION} \
