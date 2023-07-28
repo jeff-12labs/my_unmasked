@@ -21,6 +21,7 @@ class ImgTxtRetTrainDataset(ImageVideoBaseDataset):
         self.has_multi_vision_gt = has_multi_vision_gt
         self.text_cls = text_cls
         self.match_ids = {}
+        self.text2noun = {} # For sthsthv2
 
         n = 0
         for ann in self.anno_list:
@@ -28,6 +29,8 @@ class ImgTxtRetTrainDataset(ImageVideoBaseDataset):
             if key not in self.match_ids:
                 self.match_ids[key] = n
                 n += 1
+            if "noun" in ann:
+                self.text2noun[pre_text(ann["caption"])] = pre_text(ann["noun"]) 
 
         if text_cls:
             labels = set()

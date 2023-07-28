@@ -125,6 +125,7 @@ def main(config):
     setup_seed(config.seed + get_rank())
     device = torch.device(config.device)
     cudnn.benchmark = True
+    setattr(config.evaluation.ap, True)
 
     train_loaders, test_name2loaders, train_media_types = setup_dataloaders(config, mode="retcls")
     num_steps_per_epoch = sum(len(d) for d in train_loaders)

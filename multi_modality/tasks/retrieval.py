@@ -60,6 +60,23 @@ def train(
     model_without_ddp = model.module if config.distributed else model
     iterator = metric_logger.log_every(train_loader, log_freq, header)
     for i, (media_type, (image, text, idx)) in enumerate(iterator):
+        # if noun negative is exist, make negative pair using image.
+        if hasattr(train_loaders[0].dataset, "text2noun") and len(train_loaders[0].dataset.text2noun) != 0:
+            B, T, C, H, W = image.size()
+            single_image = image[:, T//2:T//2+1, :, :, :].expand(-1,T,-1,-1,-1) # select middle frame
+            image = torch.stack((image, single_image), 0) # 2, B, T, C, H, W
+            image = image.transpose(0,1).reshape(2*B, T, C, H, W)
+            new_text = []
+            for _text in text:
+                new_text.append(_text)
+                new_text.append(train_loaders[0].dataset.text2noun[_text])
+            text = new_text
+            max_idx = len(train_loaders[0].dataset)
+            new_idx = []
+            for _idx in idx:
+                new_idx.append(_idx)
+                new_idx.append(_idx + max_idx)
+            idx = torch.tensor(new_idx, dtype=idx.dtype)
         image = image.to(device, non_blocking=True)
         idx = idx.to(device, non_blocking=True)
         text_input = tokenizer(

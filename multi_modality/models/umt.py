@@ -42,6 +42,8 @@ class UMT(nn.Module):
 
         # criterions
         self.loss_weight = config.criterion.loss_weight
+        if not hasattr(self.loss_weight, "cls"):
+            setattr(self.loss_weight, "cls", 0)
         self.criterion_uta = UTA_Loss(
             config.criterion.uta_norm_type,
             config.criterion.uta_loss_type, 

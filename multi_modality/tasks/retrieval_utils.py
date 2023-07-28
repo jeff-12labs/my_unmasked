@@ -85,7 +85,7 @@ def evaluation_wrapper(model, data_loader, tokenizer, device, config, prefix="")
             txt2img_ids = data_loader.dataset.txt2img
             img2txt_ids = data_loader.dataset.img2txt
             txt_list = data_loader.dataset.text
-            res[name] = itm_eval(i2t, t2i, txt2img_ids, img2txt_ids, txt_list)
+            res[name] = itm_eval(i2t, t2i, txt2img_ids, img2txt_ids, txt_list, ap=config.evaluation.get("ap", False))
     return res
 
 
@@ -417,7 +417,7 @@ def ap_fn(rank):
 
 
 @torch.no_grad()
-def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
+def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list, ap=False):
     # Images->Text
     ranks = np.zeros(scores_i2t.shape[0])
     for index, score in enumerate(scores_i2t):
@@ -442,11 +442,10 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
     tr_mean = (tr1 + tr5 + tr10) / 3
 
     # Text->Images
-    LEGACY = False
-    if LEGACY:
-        ranks = np.zeros(scores_t2i.shape[0])
-    else:
+    if ap:
         ranks = {}
+    else:
+        ranks = np.zeros(scores_t2i.shape[0])
 
     for index, score in enumerate(scores_t2i):
         inds = np.argsort(score)[::-1]
@@ -455,7 +454,7 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
             ranks[index] = np.where(inds == gt_img_ids)[0][0]
         else:  # list, used in the case each caption has multiple GT images
             # Score
-            if LEGACY:
+            if not ap:
                 rank = 1e20
                 for i in gt_img_ids:
                     tmp = np.where(inds == i)[0][0]
@@ -476,11 +475,10 @@ def itm_eval(scores_i2t, scores_t2i, txt2img, img2txt, txt_list):
 
 
     # Compute metrics
-    if LEGACY:
+    if not ap:
         ir1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
         ir5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
         ir10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
-        ir50 = 100.0 * len(np.where(ranks < 50)[0]) / len(ranks)
         ir_mean = (ir1 + ir5 + ir10) / 3
         r_mean = (tr_mean + ir_mean) / 2
 
