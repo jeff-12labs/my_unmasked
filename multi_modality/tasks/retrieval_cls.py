@@ -125,7 +125,7 @@ def main(config):
     setup_seed(config.seed + get_rank())
     device = torch.device(config.device)
     cudnn.benchmark = True
-    setattr(config.evaluation.ap, True)
+    setattr(config.evaluation, "ap", True)
 
     train_loaders, test_name2loaders, train_media_types = setup_dataloaders(config, mode="retcls")
     num_steps_per_epoch = sum(len(d) for d in train_loaders)
@@ -207,9 +207,9 @@ def main(config):
 
                 if config.stop_key is not None and config.stop_key in eval_res:
                     if config.model.multimodal.enable:
-                        cur_r_mean = eval_res[config.stop_key]["r_mean"]
+                        cur_r_mean = eval_res[config.stop_key]["img_ap"]
                     else:
-                        cur_r_mean = eval_res[config.stop_key.replace("/", "_emb/")]["r_mean"]
+                        cur_r_mean = eval_res[config.stop_key.replace("/", "_emb/")]["img_ap"]
                 else:  # None
                     cur_r_mean = best + 1  # save the last as the best
                 eval_res = pd.DataFrame(eval_res)
